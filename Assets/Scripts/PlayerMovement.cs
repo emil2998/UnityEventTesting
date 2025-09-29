@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -8,25 +9,32 @@ public class PlayerMovement : MonoBehaviour
     private Vector2 moveInput;
     private Vector2 lookInput;
     private float speed;
+
     [SerializeField] private float crouchSpeed = 2f;
     [SerializeField] private float walkSpeed = 5f;
+    [SerializeField] private float lookSensitivity = 15f;
+
     private bool canShoot = true;
     private bool isCrouched = false;
     private bool wantToShoot = false;
-    private bool wantToCrouch = false;
-    private bool wantToPickup = false;
-    private bool couroutineRunning = false;
-    private bool canPickup = false;
-    [SerializeField] private Transform hands;
 
+    [SerializeField] private Transform hands;
     private GameObject pickupReference;
+    private GameObject objectInHands;
+    private Transform holdTarget;
+    private bool canPickup = false;
+    public bool isHolding = false;
+    private bool wantToPickup = false;
+
+    private bool coroutineRunning = false;
+
     private void Awake()
     {
         playerRigidbody = GetComponent<Rigidbody>();
         Cursor.lockState = CursorLockMode.Locked;
-
     }
 
+    #region InputCallbacks
     public void OnMove(InputAction.CallbackContext context)
     {
         moveInput = context.ReadValue<Vector2>();
@@ -34,7 +42,6 @@ public class PlayerMovement : MonoBehaviour
     public void OnMouseLook(InputAction.CallbackContext context)
     {
         lookInput = context.ReadValue<Vector2>();
-
     }
 
     public void OnShoot(InputAction.CallbackContext context)
@@ -48,37 +55,33 @@ public class PlayerMovement : MonoBehaviour
         {
             wantToShoot = false;
         }
-
     }
 
     public void OnPickup(InputAction.CallbackContext context)
     {
-
         if (context.started)
         {
             wantToPickup = true;
         }
-        if (context.canceled)
+        else if (context.canceled)
         {
             wantToPickup = false;
         }
-
     }
 
     public void OnCrouch(InputAction.CallbackContext context)
     {
-
         if (context.started)
         {
-            wantToCrouch = true;
+            isCrouched = true;
         }
         if (context.canceled)
         {
-            wantToCrouch = false;
+            isCrouched = false;
         }
-
     }
 
+    #endregion
     private void FixedUpdate()
     {
         Move();
@@ -87,62 +90,51 @@ public class PlayerMovement : MonoBehaviour
     private void Update()
     {
         Look();
-        if (wantToShoot && canShoot && !couroutineRunning)
+
+        if (wantToShoot && canShoot && !coroutineRunning)
         {
             canShoot = false;
             StartCoroutine(Shoot());
         }
-        Crouch();
 
-        if (canPickup && wantToPickup)
+        if (wantToPickup)
         {
-            PickupItem();
-        }
-        else if(!wantToPickup)
-        {
-            ReleaseItem();
-        }
-
-    }
-
-    private void Crouch()
-    {
-        if (wantToCrouch)
-        {
-            isCrouched = true;
-
-
-
+            if (canPickup && pickupReference != null && objectInHands == null)
+            {
+                PickupItem(pickupReference);
+            }
         }
         else
         {
-            isCrouched = false;
-
+            if (objectInHands != null)
+            {
+                ReleaseHeldItem();
+            }
+        }
+    }
+    private void LateUpdate()
+    {
+        if (isHolding && objectInHands != null && holdTarget != null)
+        {
+            objectInHands.transform.SetPositionAndRotation(holdTarget.position, holdTarget.rotation);
         }
     }
 
-    private IEnumerator Shoot()
-    {
-        couroutineRunning = true;
-        Debug.Log("shjooting");
-        yield return new WaitForSeconds(0.1f);
-        canShoot = true;
-        couroutineRunning = false;
 
-    }
+    #region Movement & Look
+
 
     private void Look()
     {
-
-        transform.Rotate(Vector3.up, lookInput.x);
+        float yaw = lookInput.x * lookSensitivity * Time.deltaTime;
+        transform.Rotate(Vector3.up, yaw);
     }
     private void Move()
     {
-
         Vector3 forward = transform.forward;
         Vector3 right = transform.right;
-
         Vector3 moveDirection = forward * moveInput.y + right * moveInput.x;
+
         if (isCrouched)
         {
             speed = crouchSpeed;
@@ -151,28 +143,64 @@ public class PlayerMovement : MonoBehaviour
         {
             speed = walkSpeed;
         }
-        playerRigidbody.linearVelocity = moveDirection * speed;
 
+        Vector3 finalVelocity = moveDirection * speed;
+        finalVelocity.y = playerRigidbody.linearVelocity.y;
+        playerRigidbody.linearVelocity = finalVelocity;
+    }
+    #endregion
+
+    #region Shooting
+    private IEnumerator Shoot()
+    {
+        coroutineRunning = true;
+        Debug.Log("shooting");
+        yield return new WaitForSeconds(0.1f);
+        canShoot = true;
+        coroutineRunning = false;
     }
 
-    private void PickupItem()
+    #endregion
+
+    #region Pickup / Release
+    private void PickupItem(GameObject pickup)
     {
+        if (pickup == null) return;
 
-        pickupReference.transform.SetParent(hands);
-        pickupReference.transform.localPosition = Vector3.zero;
-        Rigidbody rigidbody = pickupReference.GetComponent<Rigidbody>();
-        rigidbody.isKinematic = true;
+        if (objectInHands != null)
+        {
+            ReleaseHeldItem();
+        }
 
+        Rigidbody pickupRB = pickup.GetComponent<Rigidbody>();
+        if (pickupRB != null)
+        {
+            pickupRB.isKinematic = true;
+            pickupRB.useGravity = false;
+        }
+
+        objectInHands = pickup;
+        holdTarget = hands;
+        isHolding = true;
     }
 
-    private void ReleaseItem()
+    private void ReleaseHeldItem()
     {
+        if (objectInHands == null) return;
 
-        hands.transform.DetachChildren();
-        Rigidbody rigidbody = pickupReference.GetComponent<Rigidbody>();
-        rigidbody.isKinematic = false;
-        // pickupReference.transform.localPosition = Vector3.zero;
+        Rigidbody pickupRB = objectInHands.GetComponent<Rigidbody>();
 
+
+        if (pickupRB != null)
+        {
+            pickupRB.isKinematic = false;
+            pickupRB.useGravity = true;
+        }
+
+        objectInHands.transform.position = hands.position + hands.forward * 0.5f;
+        objectInHands = null;
+        holdTarget = null;
+        isHolding = false;
     }
 
     private void OnTriggerEnter(Collider other)
@@ -181,7 +209,6 @@ public class PlayerMovement : MonoBehaviour
         {
             canPickup = true;
             pickupReference = other.gameObject;
-
         }
     }
 
@@ -190,7 +217,13 @@ public class PlayerMovement : MonoBehaviour
         if (other.gameObject.TryGetComponent(out Pickup pickupItem))
         {
             canPickup = false;
-            pickupReference = null;
+
+            if (objectInHands == null && pickupReference == other.gameObject)
+            {
+                pickupReference = null;
+            }
         }
     }
+
+    #endregion
 }
