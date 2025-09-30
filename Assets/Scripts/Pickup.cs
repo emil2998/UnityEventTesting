@@ -9,7 +9,7 @@ public class Pickup : MonoBehaviour
     {
         if (other.gameObject.TryGetComponent(out PlayerMovement playerMovement))
         {
-            pickupText.text = "HOLD E TO CARRY ITEM";
+            pickupText.text = "HOLD F TO CARRY ITEM";
         }
     }
 
@@ -23,7 +23,7 @@ public class Pickup : MonoBehaviour
             }
             else
             {
-                pickupText.text = "HOLD E TO CARRY ITEM";
+                pickupText.text = "HOLD F TO CARRY ITEM";
             }
         }
     }

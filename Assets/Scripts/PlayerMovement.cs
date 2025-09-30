@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -9,14 +8,13 @@ public class PlayerMovement : MonoBehaviour
     private Vector2 moveInput;
     private Vector2 lookInput;
     private float speed;
+    [SerializeField] private PlayerSpeedParameters playerSpeedParameters;
 
-    [SerializeField] private float crouchSpeed = 2f;
-    [SerializeField] private float walkSpeed = 5f;
-    [SerializeField] private float lookSensitivity = 15f;
-
+    private float lookSensitivity;
+    private float jumpStrength;
     private bool canShoot = true;
-    private bool isCrouched = false;
     private bool wantToShoot = false;
+    private bool wantToCrouch = false;
 
     [SerializeField] private Transform hands;
     private GameObject pickupReference;
@@ -32,6 +30,7 @@ public class PlayerMovement : MonoBehaviour
     {
         playerRigidbody = GetComponent<Rigidbody>();
         Cursor.lockState = CursorLockMode.Locked;
+
     }
 
     #region InputCallbacks
@@ -69,15 +68,23 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
+    public void OnJump(InputAction.CallbackContext context)
+    {
+        if (context.started)
+        {
+            Jump();
+        }
+    }
+
     public void OnCrouch(InputAction.CallbackContext context)
     {
         if (context.started)
         {
-            isCrouched = true;
+            wantToCrouch = true;
         }
         if (context.canceled)
         {
-            isCrouched = false;
+            wantToCrouch = false;
         }
     }
 
@@ -90,7 +97,6 @@ public class PlayerMovement : MonoBehaviour
     private void Update()
     {
         Look();
-
         if (wantToShoot && canShoot && !coroutineRunning)
         {
             canShoot = false;
@@ -126,6 +132,7 @@ public class PlayerMovement : MonoBehaviour
 
     private void Look()
     {
+        lookSensitivity = playerSpeedParameters.rotationSpeed;
         float yaw = lookInput.x * lookSensitivity * Time.deltaTime;
         transform.Rotate(Vector3.up, yaw);
     }
@@ -135,26 +142,47 @@ public class PlayerMovement : MonoBehaviour
         Vector3 right = transform.right;
         Vector3 moveDirection = forward * moveInput.y + right * moveInput.x;
 
-        if (isCrouched)
+        if (wantToCrouch)
         {
-            speed = crouchSpeed;
+            speed = playerSpeedParameters.crouchedMovementSpeed;
         }
         else
         {
-            speed = walkSpeed;
+            speed = playerSpeedParameters.normalMovementSpeed;
         }
-
         Vector3 finalVelocity = moveDirection * speed;
         finalVelocity.y = playerRigidbody.linearVelocity.y;
         playerRigidbody.linearVelocity = finalVelocity;
     }
+
+    private void Jump()
+    {
+        if (playerRigidbody.linearVelocity.y != 0)
+        {
+            return;
+        }
+        jumpStrength = playerSpeedParameters.jumpStrength;
+        playerRigidbody.AddForce(transform.up * jumpStrength);
+    }
+
+    private void Crouch()
+    {
+        if (wantToCrouch && playerRigidbody.linearVelocity.y == 0)
+        {
+            transform.localScale = new Vector3(1, 0.5f, 1);
+        }
+        else if (!wantToCrouch)
+        {
+            transform.localScale = Vector3.one;
+        }
+    }
+
     #endregion
 
     #region Shooting
     private IEnumerator Shoot()
     {
         coroutineRunning = true;
-        Debug.Log("shooting");
         yield return new WaitForSeconds(0.1f);
         canShoot = true;
         coroutineRunning = false;
